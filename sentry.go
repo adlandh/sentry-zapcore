@@ -1,4 +1,5 @@
-package sentry_zapcore
+// Package sentryzapcore contains the zap Core for sending log entries to Sentry
+package sentryzapcore
 
 import (
 	"errors"
@@ -59,6 +60,7 @@ func (s *SentryCore) Check(entry zapcore.Entry, checkEntry *zapcore.CheckedEntry
 	if s.Enabled(entry.Level) {
 		return checkEntry.AddCore(entry, s)
 	}
+
 	return checkEntry
 }
 
