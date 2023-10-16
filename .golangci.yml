@@ -7,6 +7,7 @@ linters:
   disable-all: true
   fix: true
   enable:
+    - bodyclose
     - errcheck
     - gosimple
     - govet
@@ -14,21 +15,28 @@ linters:
     - staticcheck
     - unused
     - asciicheck
+    - cyclop
     - dupl
     - dupword
     - errorlint
     - exportloopref
     - forcetypeassert
+    - funlen
+    - gocritic
     - gofmt
     - goimports
     - gosec
     - gosmopolitan
     - loggercheck
+    - makezero
     - mirror
     - noctx
     - prealloc
     - predeclared
+    - stylecheck
     - wastedassign
+    - wsl
+    - wrapcheck
 
 issues:
   exclude-use-default: false

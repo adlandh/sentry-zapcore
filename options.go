@@ -1,4 +1,4 @@
-package sentry_zapcore
+package sentryzapcore
 
 import "go.uber.org/zap/zapcore"
 
