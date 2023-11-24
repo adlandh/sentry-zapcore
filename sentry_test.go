@@ -2,7 +2,6 @@ package sentryzapcore
 
 import (
 	"errors"
-	"log"
 	"sync"
 	"testing"
 	"time"
@@ -119,7 +118,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 				s.Require().Equal(1, len(event.Exception))
 				s.Require().Equal("*errors.errorString", event.Exception[0].Type)
 				s.Require().Equal(message, event.Exception[0].Value)
-				log.Printf("%#v", event.Exception[0].Stacktrace)
+				s.Require().NotEmpty(event.Exception[0].Stacktrace)
 			}
 		}
 		s.Require().True(found)
