@@ -85,7 +85,12 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	}
 
 	if entry.Level >= zapcore.ErrorLevel && s.stackTrace {
-		event.SetException(errors.New(entry.Message), localHub.Client().Options().MaxErrorDepth)
+		maxDepth := 10
+		if localHub.Client() != nil {
+			maxDepth = localHub.Client().Options().MaxErrorDepth
+		}
+
+		event.SetException(errors.New(entry.Message), maxDepth)
 	}
 
 	localHub.CaptureEvent(event)
