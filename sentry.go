@@ -29,10 +29,10 @@ func NewSentryCore(options ...SentryCoreOptions) *SentryCore {
 }
 
 func (s *SentryCore) With(fields []zapcore.Field) zapcore.Core {
-	return s.with(fields)
+	return s.addFields(fields)
 }
 
-func (s *SentryCore) with(fields []zapcore.Field) *SentryCore {
+func (s *SentryCore) addFields(fields []zapcore.Field) *SentryCore {
 	// Copy our map.
 	m := make(map[string]interface{}, len(s.fields))
 	for k, v := range s.fields {
@@ -72,7 +72,7 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 		scope.SetTag("line", strconv.Itoa(entry.Caller.Line))
 	})
 
-	clone := s.with(fields)
+	clone := s.addFields(fields)
 
 	event := &sentry.Event{
 		Extra:       clone.fields,
@@ -98,7 +98,7 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	return nil
 }
 
-func (s *SentryCore) Sync() error {
+func (*SentryCore) Sync() error {
 	sentry.Flush(2 * time.Second)
 	return nil
 }

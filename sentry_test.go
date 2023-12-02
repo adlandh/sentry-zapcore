@@ -19,11 +19,11 @@ type transportMock struct {
 	events []*sentry.Event
 }
 
-func (t *transportMock) Configure(_ sentry.ClientOptions) {}
+func (*transportMock) Configure(_ sentry.ClientOptions) {}
 func (t *transportMock) SendEvent(event *sentry.Event) {
 	t.events = append(t.events, event)
 }
-func (t *transportMock) Flush(_ time.Duration) bool {
+func (*transportMock) Flush(_ time.Duration) bool {
 	return true
 }
 func (t *transportMock) Events() []*sentry.Event {
@@ -41,7 +41,7 @@ func (s *sentryZapCoreTest) SetupTest() {
 
 func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 	s.Nil(sentry.CurrentHub().Client())
-	s.Run("with info level", func() {
+	s.Run("addFields info level", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		message := gofakeit.Sentence(10)
 		logger.Info(message)
@@ -54,7 +54,7 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 		s.Require().False(found)
 	})
 
-	s.Run("with error level", func() {
+	s.Run("addFields error level", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		message := gofakeit.Sentence(10)
 		logger.Error(message)
@@ -98,7 +98,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		}
 		s.Require().True(found)
 	})
-	s.Run("with stacktrace", func() {
+	s.Run("addFields stacktrace", func() {
 		err := sentry.Init(sentry.ClientOptions{
 			Transport:   s.transport,
 			Environment: "test",
@@ -147,7 +147,7 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 		}
 		s.Require().False(found)
 	})
-	s.Run("with min level info", func() {
+	s.Run("addFields min level info", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithMinLevel(zapcore.InfoLevel))
 		message := gofakeit.Sentence(10)
 		logger.Info(message)
