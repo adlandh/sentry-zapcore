@@ -2,6 +2,7 @@
 package sentryzapcore
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"time"
@@ -16,6 +17,7 @@ type SentryCore struct {
 	zapcore.LevelEnabler
 	fields     map[string]interface{}
 	stackTrace bool
+	context    context.Context
 }
 
 func NewSentryCore(options ...SentryCoreOptions) *SentryCore {
@@ -33,6 +35,7 @@ func (s *SentryCore) With(fields []zapcore.Field) zapcore.Core {
 }
 
 func (s *SentryCore) addFields(fields []zapcore.Field) *SentryCore {
+	var currentContext context.Context
 	// Copy our map.
 	m := make(map[string]interface{}, len(s.fields))
 	for k, v := range s.fields {
@@ -42,7 +45,13 @@ func (s *SentryCore) addFields(fields []zapcore.Field) *SentryCore {
 	// Add fields to an in-memory encoder.
 	enc := zapcore.NewMapObjectEncoder()
 	for _, f := range fields {
-		f.AddTo(enc)
+		if v, ok := f.Interface.(context.Context); ok {
+			currentContext = v
+		}
+
+		if f.Type != zapcore.SkipType {
+			f.AddTo(enc)
+		}
 	}
 
 	// Merge the two maps.
@@ -53,6 +62,7 @@ func (s *SentryCore) addFields(fields []zapcore.Field) *SentryCore {
 	return &SentryCore{
 		LevelEnabler: s.LevelEnabler,
 		fields:       m,
+		context:      currentContext,
 	}
 }
 
@@ -67,6 +77,11 @@ func (s *SentryCore) Check(entry zapcore.Entry, checkEntry *zapcore.CheckedEntry
 func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	defer sentry.Flush(2 * time.Second)
 	localHub := sentry.CurrentHub().Clone()
+	client := localHub.Client()
+	if client == nil {
+		return nil
+	}
+
 	localHub.ConfigureScope(func(scope *sentry.Scope) {
 		scope.SetTag("file", entry.Caller.File)
 		scope.SetTag("line", strconv.Itoa(entry.Caller.Line))
@@ -85,15 +100,12 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	}
 
 	if entry.Level >= zapcore.ErrorLevel && s.stackTrace {
-		maxDepth := 10
-		if localHub.Client() != nil {
-			maxDepth = localHub.Client().Options().MaxErrorDepth
-		}
-
-		event.SetException(errors.New(entry.Message), maxDepth)
+		event.SetException(errors.New(entry.Message), client.Options().MaxErrorDepth)
 	}
 
-	localHub.CaptureEvent(event)
+	client.CaptureEvent(event, &sentry.EventHint{
+		Context: s.context,
+	}, localHub.Scope())
 
 	return nil
 }
