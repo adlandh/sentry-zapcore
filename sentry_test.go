@@ -1,6 +1,7 @@
 package sentryzapcore
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -94,6 +95,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 				s.Require().Equal("test", event.Environment)
 				s.Require().NotEmpty(event.EventID)
 				s.Require().Empty(event.Exception)
+				s.Require().Empty(event.Contexts["trace"])
 			}
 		}
 		s.Require().True(found)
@@ -119,6 +121,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 				s.Require().Equal("*errors.errorString", event.Exception[0].Type)
 				s.Require().Equal(message, event.Exception[0].Value)
 				s.Require().NotEmpty(event.Exception[0].Stacktrace)
+				s.Require().Empty(event.Contexts["trace"])
 			}
 		}
 		s.Require().True(found)
@@ -159,6 +162,53 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 		}
 		s.Require().True(found)
 	})
+}
+
+func (s *sentryZapCoreTest) TestWithSpanContext() {
+	err := sentry.Init(sentry.ClientOptions{
+		Transport:   s.transport,
+		Environment: "test",
+	})
+
+	s.Require().NoError(err)
+
+	s.NotNil(sentry.CurrentHub().Client())
+
+	opName := gofakeit.Word()
+	rootSpan := sentry.StartSpan(context.Background(), opName+"_root")
+	defer rootSpan.Finish()
+	span := sentry.StartSpan(rootSpan.Context(), opName)
+	defer span.Finish()
+
+	fakeId := gofakeit.UUID()
+	message := gofakeit.Sentence(10)
+	ctxField := zap.Field{
+		Key:       "ctx",
+		Type:      zapcore.SkipType,
+		Interface: span.Context(),
+	}
+
+	logger := WithSentry(zaptest.NewLogger(s.T()))
+	logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), ctxField, zap.Error(errors.New("error")))
+	found := false
+	for _, event := range s.transport.Events() {
+		if event.Message == message {
+			found = true
+			s.Require().Equal(fakeId, event.Extra["id"])
+			s.Require().Equal("test", event.Extra["func"])
+			s.Require().Equal("error", event.Extra["error"])
+			s.Require().NotContains(event.Extra, "ctx")
+			s.Require().Equal(sentry.LevelError, event.Level)
+			s.Require().Equal("test", event.Environment)
+			s.Require().NotEmpty(event.EventID)
+			s.Require().Empty(event.Exception)
+			s.Require().NotEmpty(event.Contexts["trace"])
+			s.Require().EqualValues(event.Contexts["trace"]["op"], opName)
+			s.Require().EqualValues(event.Contexts["trace"]["span_id"], span.SpanID)
+			s.Require().EqualValues(event.Contexts["trace"]["trace_id"], span.TraceID)
+		}
+	}
+	s.Require().True(found)
 }
 
 func TestSentryZapCore(t *testing.T) {
