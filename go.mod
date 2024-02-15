@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
-	github.com/getsentry/sentry-go v0.26.0
+	github.com/getsentry/sentry-go v0.27.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.26.0
 )
