@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brianvoe/gofakeit"
+	"github.com/brianvoe/gofakeit/v7"
 	"github.com/getsentry/sentry-go"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
