@@ -5,7 +5,7 @@ go 1.22
 toolchain go1.22.0
 
 require (
-	github.com/brianvoe/gofakeit/v7 v7.0.1
+	github.com/brianvoe/gofakeit/v7 v7.0.2
 	github.com/getsentry/sentry-go v0.27.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.27.0
