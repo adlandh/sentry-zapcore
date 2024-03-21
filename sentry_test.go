@@ -20,7 +20,7 @@ type transportMock struct {
 	events []*sentry.Event
 }
 
-func (*transportMock) Configure(_ sentry.ClientOptions) {}
+func (*transportMock) Configure(_ sentry.ClientOptions) { /* stub */ }
 func (t *transportMock) SendEvent(event *sentry.Event) {
 	t.events = append(t.events, event)
 }

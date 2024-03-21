@@ -46,5 +46,4 @@ issues:
 
 linters-settings:
   govet:
-    check-shadowing: true
     enable-all: true
