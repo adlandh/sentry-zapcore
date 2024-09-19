@@ -95,7 +95,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 				s.Require().Equal("test", event.Environment)
 				s.Require().NotEmpty(event.EventID)
 				s.Require().Empty(event.Exception)
-				s.Require().Empty(event.Contexts["trace"])
+				s.Require().NotEmpty(event.Contexts["trace"])
 			}
 		}
 		s.Require().True(found)
@@ -121,7 +121,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 				s.Require().Equal("*errors.errorString", event.Exception[0].Type)
 				s.Require().Equal(message, event.Exception[0].Value)
 				s.Require().NotEmpty(event.Exception[0].Stacktrace)
-				s.Require().Empty(event.Contexts["trace"])
+				s.Require().NotEmpty(event.Contexts["trace"])
 			}
 		}
 		s.Require().True(found)

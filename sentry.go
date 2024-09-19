@@ -35,7 +35,7 @@ func (s *SentryCore) With(fields []zapcore.Field) zapcore.Core {
 }
 
 func (s *SentryCore) addFields(fields []zapcore.Field) *SentryCore {
-	var currentContext context.Context
+	currentContext := context.Background()
 	// Copy our map.
 	m := make(map[string]interface{}, len(s.fields))
 	for k, v := range s.fields {
@@ -77,6 +77,11 @@ func (s *SentryCore) Check(entry zapcore.Entry, checkEntry *zapcore.CheckedEntry
 
 func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	defer sentry.Flush(2 * time.Second)
+
+	clone := s.addFields(fields)
+
+	span := sentry.SpanFromContext(clone.context)
+
 	localHub := sentry.CurrentHub().Clone()
 
 	client := localHub.Client()
@@ -87,9 +92,8 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	localHub.ConfigureScope(func(scope *sentry.Scope) {
 		scope.SetTag("file", entry.Caller.File)
 		scope.SetTag("line", strconv.Itoa(entry.Caller.Line))
+		scope.SetSpan(span)
 	})
-
-	clone := s.addFields(fields)
 
 	event := &sentry.Event{
 		Extra:       clone.fields,
@@ -105,9 +109,7 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 		event.SetException(errors.New(entry.Message), client.Options().MaxErrorDepth)
 	}
 
-	client.CaptureEvent(event, &sentry.EventHint{
-		Context: s.context,
-	}, localHub.Scope())
+	client.CaptureEvent(event, nil, localHub.Scope())
 
 	return nil
 }
