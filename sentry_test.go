@@ -15,6 +15,8 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+var _ sentry.Transport = (*transportMock)(nil)
+
 type transportMock struct {
 	sync.Mutex
 	events []*sentry.Event
@@ -29,6 +31,9 @@ func (*transportMock) Flush(_ time.Duration) bool {
 }
 func (t *transportMock) Events() []*sentry.Event {
 	return t.events
+}
+func (*transportMock) Close() {
+	/* stub */
 }
 
 type sentryZapCoreTest struct {
