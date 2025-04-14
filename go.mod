@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/brianvoe/gofakeit/v7 v7.2.1
-	github.com/getsentry/sentry-go v0.31.1
+	github.com/getsentry/sentry-go v0.32.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 )
