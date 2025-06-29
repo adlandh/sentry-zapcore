@@ -104,61 +104,64 @@ func flushSentry() {
 	sentry.Flush(2 * time.Second)
 }
 
-// Write takes a log entry and sends it to Sentry.
+// Write takes a log entry and sends it to Sentry asynchronously.
 // It implements zapcore.Core interface.
 func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
-	// Flush Sentry events when the function returns
-	defer flushSentry()
-
 	// Create a clone with the additional fields
 	clone := s.addFields(fields)
 
-	// Extract span from context if present
-	span := sentry.SpanFromContext(clone.context)
+	go func(clone *SentryCore, entry zapcore.Entry) {
+		// Extract span from context if present
+		span := sentry.SpanFromContext(clone.context)
 
-	// Create a local hub to avoid modifying the global hub
-	localHub := sentry.CurrentHub().Clone()
+		// Create a local hub to avoid modifying the global hub
+		localHub := sentry.CurrentHub().Clone()
 
-	// Get the Sentry client
-	client := localHub.Client()
-	if client == nil {
-		// No client configured, nothing to do
-		return nil
-	}
+		// Get the Sentry client
+		client := localHub.Client()
+		if client == nil {
+			// No client configured, nothing to do
+			return
+		}
 
-	// Configure the scope with caller information and span
-	localHub.ConfigureScope(func(scope *sentry.Scope) {
-		scope.SetTag("file", entry.Caller.File)
-		scope.SetTag("line", strconv.Itoa(entry.Caller.Line))
-		scope.SetSpan(span)
-	})
+		// Configure the scope with caller information and span
+		localHub.ConfigureScope(func(scope *sentry.Scope) {
+			scope.SetTag("file", entry.Caller.File)
+			scope.SetTag("line", strconv.Itoa(entry.Caller.Line))
+			scope.SetSpan(span)
+		})
 
-	// Create the Sentry event
-	event := &sentry.Event{
-		Extra:       clone.fields,
-		Fingerprint: []string{entry.Message},
-		Level:       sentrySeverity(entry.Level),
-		Message:     entry.Message,
-		Platform:    "go",
-		Timestamp:   entry.Time,
-		Logger:      entry.LoggerName,
-	}
+		// Create the Sentry event
+		event := &sentry.Event{
+			Extra:       clone.fields,
+			Fingerprint: []string{entry.Message},
+			Level:       sentrySeverity(entry.Level),
+			Message:     entry.Message,
+			Platform:    "go",
+			Timestamp:   entry.Time,
+			Logger:      entry.LoggerName,
+		}
 
-	// Add exception with stack trace for error-level logs if enabled
-	if entry.Level >= zapcore.ErrorLevel && s.stackTrace {
-		event.SetException(errors.New(entry.Message), client.Options().MaxErrorDepth)
-	}
+		// Add exception with stack trace for error-level logs if enabled
+		if entry.Level >= zapcore.ErrorLevel && s.stackTrace {
+			event.SetException(errors.New(entry.Message), client.Options().MaxErrorDepth)
+		}
 
-	// Send the event to Sentry
-	client.CaptureEvent(event, nil, localHub.Scope())
+		// Send the event to Sentry
+		client.CaptureEvent(event, nil, localHub.Scope())
 
+		// Optionally flush, but do not block main goroutine
+		go flushSentry()
+	}(clone, entry)
+
+	// Since this is async, we can't return errors from Sentry
 	return nil
 }
 
 // Sync flushes any buffered log entries.
 // It implements zapcore.Core interface.
 func (*SentryCore) Sync() error {
-	flushSentry()
+	go flushSentry()
 	return nil
 }
 
