@@ -24,6 +24,8 @@ type transportMock struct {
 
 func (*transportMock) Configure(_ sentry.ClientOptions) { /* stub */ }
 func (t *transportMock) SendEvent(event *sentry.Event) {
+	t.Lock()
+	defer t.Unlock()
 	t.events = append(t.events, event)
 }
 func (*transportMock) Flush(_ time.Duration) bool {
@@ -34,6 +36,8 @@ func (t *transportMock) FlushWithContext(_ context.Context) bool {
 }
 
 func (t *transportMock) Events() []*sentry.Event {
+	t.Lock()
+	defer t.Unlock()
 	return t.events
 }
 func (*transportMock) Close() {
@@ -55,6 +59,7 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		message := gofakeit.Sentence(10)
 		logger.Info(message)
+		time.Sleep(30 * time.Millisecond)
 		found := false
 		for _, event := range s.transport.Events() {
 			if event.Message == message {
@@ -68,6 +73,7 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		message := gofakeit.Sentence(10)
 		logger.Error(message)
+		time.Sleep(30 * time.Millisecond)
 		found := false
 		for _, event := range s.transport.Events() {
 			if event.Message == message {
@@ -93,6 +99,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		message := gofakeit.Sentence(10)
 		logger := WithSentry(zaptest.NewLogger(s.T()))
 		logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), zap.Error(errors.New("error")))
+		time.Sleep(30 * time.Millisecond)
 		found := false
 		for _, event := range s.transport.Events() {
 			if event.Message == message {
@@ -121,6 +128,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		message := gofakeit.Sentence(10)
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), zap.Error(errors.New("error")))
+		time.Sleep(30 * time.Millisecond)
 		found := false
 		for _, event := range s.transport.Events() {
 			if event.Message == message {
@@ -151,6 +159,7 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 		logger := WithSentry(zaptest.NewLogger(s.T()))
 		message := gofakeit.Sentence(10)
 		logger.Info(message)
+		time.Sleep(30 * time.Millisecond)
 		found := false
 		for _, event := range s.transport.Events() {
 			if event.Message == message {
@@ -163,6 +172,7 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithMinLevel(zapcore.InfoLevel))
 		message := gofakeit.Sentence(10)
 		logger.Info(message)
+		time.Sleep(30 * time.Millisecond)
 		found := false
 		for _, event := range s.transport.Events() {
 			if event.Message == message {
@@ -199,6 +209,7 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 
 	logger := WithSentry(zaptest.NewLogger(s.T()))
 	logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), ctxField, zap.Error(errors.New("error")))
+	time.Sleep(30 * time.Millisecond)
 	found := false
 	for _, event := range s.transport.Events() {
 		if event.Message == message {
