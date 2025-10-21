@@ -57,7 +57,7 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 	s.Nil(sentry.CurrentHub().Client())
 	s.Run("with info level", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
-		message := gofakeit.Sentence(10)
+		message := gofakeit.Sentence()
 		logger.Info(message)
 		time.Sleep(30 * time.Millisecond)
 		found := false
@@ -71,7 +71,7 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 
 	s.Run("with error level", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
-		message := gofakeit.Sentence(10)
+		message := gofakeit.Sentence()
 		logger.Error(message)
 		time.Sleep(30 * time.Millisecond)
 		found := false
@@ -96,7 +96,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 
 	s.Run("without stacktrace", func() {
 		fakeId := gofakeit.UUID()
-		message := gofakeit.Sentence(10)
+		message := gofakeit.Sentence()
 		logger := WithSentry(zaptest.NewLogger(s.T()))
 		logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), zap.Error(errors.New("error")))
 		time.Sleep(30 * time.Millisecond)
@@ -125,7 +125,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		s.Require().NoError(err)
 
 		fakeId := gofakeit.UUID()
-		message := gofakeit.Sentence(10)
+		message := gofakeit.Sentence()
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), zap.Error(errors.New("error")))
 		time.Sleep(30 * time.Millisecond)
@@ -157,7 +157,7 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 
 	s.Run("without min level", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()))
-		message := gofakeit.Sentence(10)
+		message := gofakeit.Sentence()
 		logger.Info(message)
 		time.Sleep(30 * time.Millisecond)
 		found := false
@@ -170,7 +170,7 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 	})
 	s.Run("with min level info", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithMinLevel(zapcore.InfoLevel))
-		message := gofakeit.Sentence(10)
+		message := gofakeit.Sentence()
 		logger.Info(message)
 		time.Sleep(30 * time.Millisecond)
 		found := false
@@ -200,7 +200,7 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 	defer span.Finish()
 
 	fakeId := gofakeit.UUID()
-	message := gofakeit.Sentence(10)
+	message := gofakeit.Sentence()
 	ctxField := zap.Field{
 		Key:       "ctx",
 		Type:      zapcore.SkipType,
