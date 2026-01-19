@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/brianvoe/gofakeit/v7 v7.14.0
-	github.com/getsentry/sentry-go v0.40.0
+	github.com/getsentry/sentry-go v0.41.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.1
 )
