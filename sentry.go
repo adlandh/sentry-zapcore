@@ -235,58 +235,118 @@ func (sink *logEntrySink) SetFloat64(value float64) {
 	sink.entry = sink.entry.Float64(sink.key, value)
 }
 
-//nolint:cyclop,funlen // Type-switch is the clearest way to map values into sink methods.
 func applyValue(value interface{}, sink valueSink) {
+	if v, ok := timeStringValue(value); ok {
+		sink.SetString(v)
+		return
+	}
+
+	if v, ok := stringValue(value); ok {
+		sink.SetString(v)
+		return
+	}
+
+	if v, ok := boolValue(value); ok {
+		sink.SetBool(v)
+		return
+	}
+
+	if v, ok := signedInt64Value(value); ok {
+		sink.SetInt64(v)
+		return
+	}
+
+	if v, ok := unsignedInt64Value(value); ok {
+		if v > math.MaxInt64 {
+			sink.SetString(fmt.Sprint(value))
+			return
+		}
+
+		sink.SetInt64(int64(v))
+
+		return
+	}
+
+	if v, ok := float64Value(value); ok {
+		sink.SetFloat64(v)
+		return
+	}
+
+	sink.SetString(fmt.Sprint(value))
+}
+
+func timeStringValue(value interface{}) (string, bool) {
+	switch v := value.(type) {
+	case time.Time:
+		return v.Format(time.RFC3339Nano), true
+	case time.Duration:
+		return v.String(), true
+	default:
+		return "", false
+	}
+}
+
+func stringValue(value interface{}) (string, bool) {
 	switch v := value.(type) {
 	case string:
-		sink.SetString(v)
+		return v, true
 	case []byte:
-		sink.SetString(string(v))
-	case bool:
-		sink.SetBool(v)
-	case int:
-		sink.SetInt(v)
-	case int8:
-		sink.SetInt(int(v))
-	case int16:
-		sink.SetInt(int(v))
-	case int32:
-		sink.SetInt(int(v))
-	case int64:
-		sink.SetInt64(v)
-	case uint:
-		if v > math.MaxInt64 {
-			sink.SetString(fmt.Sprint(v))
-			return
-		}
-
-		sink.SetInt64(int64(v))
-	case uint8:
-		sink.SetInt64(int64(v))
-	case uint16:
-		sink.SetInt64(int64(v))
-	case uint32:
-		sink.SetInt64(int64(v))
-	case uint64:
-		if v > math.MaxInt64 {
-			sink.SetString(fmt.Sprint(v))
-			return
-		}
-
-		sink.SetInt64(int64(v))
-	case float32:
-		sink.SetFloat64(float64(v))
-	case float64:
-		sink.SetFloat64(v)
-	case time.Time:
-		sink.SetString(v.Format(time.RFC3339Nano))
-	case time.Duration:
-		sink.SetString(v.String())
+		return string(v), true
 	case error:
-		sink.SetString(v.Error())
+		return v.Error(), true
 	case fmt.Stringer:
-		sink.SetString(v.String())
+		return v.String(), true
 	default:
-		sink.SetString(fmt.Sprint(v))
+		return "", false
+	}
+}
+
+func boolValue(value interface{}) (bool, bool) {
+	v, ok := value.(bool)
+	return v, ok
+}
+
+func signedInt64Value(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int8:
+		return int64(v), true
+	case int16:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	default:
+		return 0, false
+	}
+}
+
+func unsignedInt64Value(value interface{}) (uint64, bool) {
+	switch v := value.(type) {
+	case uint:
+		return uint64(v), true
+	case uint8:
+		return uint64(v), true
+	case uint16:
+		return uint64(v), true
+	case uint32:
+		return uint64(v), true
+	case uint64:
+		return v, true
+	default:
+		return 0, false
+	}
+}
+
+func float64Value(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	default:
+		return 0, false
 	}
 }
