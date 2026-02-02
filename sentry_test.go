@@ -44,6 +44,19 @@ func (*transportMock) Close() {
 	/* stub */
 }
 
+func findLog(events []*sentry.Event, message string) (*sentry.Log, bool) {
+	for _, event := range events {
+		for i := range event.Logs {
+			log := &event.Logs[i]
+			if log.Body == message {
+				return log, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
 type sentryZapCoreTest struct {
 	suite.Suite
 	transport *transportMock
@@ -59,13 +72,8 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		message := gofakeit.Sentence()
 		logger.Info(message)
-		time.Sleep(30 * time.Millisecond)
-		found := false
-		for _, event := range s.transport.Events() {
-			if event.Message == message {
-				found = true
-			}
-		}
+		sentry.Flush(2 * time.Second)
+		_, found := findLog(s.transport.Events(), message)
 		s.Require().False(found)
 	})
 
@@ -73,13 +81,8 @@ func (s *sentryZapCoreTest) Test0WithoutSentryInit() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		message := gofakeit.Sentence()
 		logger.Error(message)
-		time.Sleep(30 * time.Millisecond)
-		found := false
-		for _, event := range s.transport.Events() {
-			if event.Message == message {
-				found = true
-			}
-		}
+		sentry.Flush(2 * time.Second)
+		_, found := findLog(s.transport.Events(), message)
 		s.Require().False(found)
 	})
 }
@@ -88,6 +91,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 	err := sentry.Init(sentry.ClientOptions{
 		Transport:   s.transport,
 		Environment: "test",
+		EnableLogs:  true,
 	})
 
 	s.Require().NoError(err)
@@ -99,27 +103,21 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		message := gofakeit.Sentence()
 		logger := WithSentry(zaptest.NewLogger(s.T()))
 		logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), zap.Error(errors.New("error")))
-		time.Sleep(30 * time.Millisecond)
-		found := false
-		for _, event := range s.transport.Events() {
-			if event.Message == message {
-				found = true
-				s.Require().Equal(fakeId, event.Extra["id"])
-				s.Require().Equal("test", event.Extra["func"])
-				s.Require().Equal("error", event.Extra["error"])
-				s.Require().Equal(sentry.LevelError, event.Level)
-				s.Require().Equal("test", event.Environment)
-				s.Require().NotEmpty(event.EventID)
-				s.Require().Empty(event.Exception)
-				s.Require().NotEmpty(event.Contexts["trace"])
-			}
-		}
+		sentry.Flush(2 * time.Second)
+		logEntry, found := findLog(s.transport.Events(), message)
 		s.Require().True(found)
+		s.Require().Equal(message, logEntry.Body)
+		s.Require().Equal(fakeId, logEntry.Attributes["id"].Value)
+		s.Require().Equal("test", logEntry.Attributes["func"].Value)
+		s.Require().Equal("error", logEntry.Attributes["error"].Value)
+		s.Require().Equal(sentry.LogLevelError, logEntry.Level)
+		s.Require().Equal("test", logEntry.Attributes["sentry.environment"].Value)
 	})
 	s.Run("with stacktrace", func() {
 		err := sentry.Init(sentry.ClientOptions{
 			Transport:   s.transport,
 			Environment: "test",
+			EnableLogs:  true,
 		})
 
 		s.Require().NoError(err)
@@ -128,20 +126,10 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		message := gofakeit.Sentence()
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithStackTrace())
 		logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), zap.Error(errors.New("error")))
-		time.Sleep(30 * time.Millisecond)
-		found := false
-		for _, event := range s.transport.Events() {
-			if event.Message == message {
-				found = true
-				s.Require().NotEmpty(event.EventID)
-				s.Require().Equal(1, len(event.Exception))
-				s.Require().Equal("*errors.errorString", event.Exception[0].Type)
-				s.Require().Equal(message, event.Exception[0].Value)
-				s.Require().NotEmpty(event.Exception[0].Stacktrace)
-				s.Require().NotEmpty(event.Contexts["trace"])
-			}
-		}
+		sentry.Flush(2 * time.Second)
+		logEntry, found := findLog(s.transport.Events(), message)
 		s.Require().True(found)
+		s.Require().NotEmpty(logEntry.Attributes["stacktrace"].Value)
 	})
 }
 
@@ -149,6 +137,7 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 	err := sentry.Init(sentry.ClientOptions{
 		Transport:   s.transport,
 		Environment: "test",
+		EnableLogs:  true,
 	})
 
 	s.Require().NoError(err)
@@ -159,26 +148,16 @@ func (s *sentryZapCoreTest) TestWithInfoLog() {
 		logger := WithSentry(zaptest.NewLogger(s.T()))
 		message := gofakeit.Sentence()
 		logger.Info(message)
-		time.Sleep(30 * time.Millisecond)
-		found := false
-		for _, event := range s.transport.Events() {
-			if event.Message == message {
-				found = true
-			}
-		}
+		sentry.Flush(2 * time.Second)
+		_, found := findLog(s.transport.Events(), message)
 		s.Require().False(found)
 	})
 	s.Run("with min level info", func() {
 		logger := WithSentry(zaptest.NewLogger(s.T()), WithMinLevel(zapcore.InfoLevel))
 		message := gofakeit.Sentence()
 		logger.Info(message)
-		time.Sleep(30 * time.Millisecond)
-		found := false
-		for _, event := range s.transport.Events() {
-			if event.Message == message {
-				found = true
-			}
-		}
+		sentry.Flush(2 * time.Second)
+		_, found := findLog(s.transport.Events(), message)
 		s.Require().True(found)
 	})
 }
@@ -187,6 +166,7 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 	err := sentry.Init(sentry.ClientOptions{
 		Transport:   s.transport,
 		Environment: "test",
+		EnableLogs:  true,
 	})
 
 	s.Require().NoError(err)
@@ -209,26 +189,18 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 
 	logger := WithSentry(zaptest.NewLogger(s.T()))
 	logger.Error(message, zap.String("id", fakeId), zap.String("func", "test"), ctxField, zap.Error(errors.New("error")))
-	time.Sleep(30 * time.Millisecond)
-	found := false
-	for _, event := range s.transport.Events() {
-		if event.Message == message {
-			found = true
-			s.Require().Equal(fakeId, event.Extra["id"])
-			s.Require().Equal("test", event.Extra["func"])
-			s.Require().Equal("error", event.Extra["error"])
-			s.Require().NotContains(event.Extra, "ctx")
-			s.Require().Equal(sentry.LevelError, event.Level)
-			s.Require().Equal("test", event.Environment)
-			s.Require().NotEmpty(event.EventID)
-			s.Require().Empty(event.Exception)
-			s.Require().NotEmpty(event.Contexts["trace"])
-			s.Require().EqualValues(event.Contexts["trace"]["op"], opName)
-			s.Require().EqualValues(event.Contexts["trace"]["span_id"], span.SpanID)
-			s.Require().EqualValues(event.Contexts["trace"]["trace_id"], span.TraceID)
-		}
-	}
+	sentry.Flush(2 * time.Second)
+	logEntry, found := findLog(s.transport.Events(), message)
 	s.Require().True(found)
+	s.Require().Equal(fakeId, logEntry.Attributes["id"].Value)
+	s.Require().Equal("test", logEntry.Attributes["func"].Value)
+	s.Require().Equal("error", logEntry.Attributes["error"].Value)
+	_, hasCtx := logEntry.Attributes["ctx"]
+	s.Require().False(hasCtx)
+	s.Require().Equal(sentry.LogLevelError, logEntry.Level)
+	s.Require().Equal("test", logEntry.Attributes["sentry.environment"].Value)
+	s.Require().Equal(span.TraceID, logEntry.TraceID)
+	s.Require().Equal(span.SpanID, logEntry.SpanID)
 }
 
 func TestSentryZapCore(t *testing.T) {

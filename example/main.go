@@ -3,13 +3,15 @@ package main
 import (
 	"errors"
 
-	sentryzapcore "github.com/adlandh/sentry-zapcore"
+	sentryzapcore "github.com/adlandh/sentry-zapcore/v2"
 	"github.com/getsentry/sentry-go"
 	"go.uber.org/zap"
 )
 
 func main() {
-	err := sentry.Init(sentry.ClientOptions{})
+	err := sentry.Init(sentry.ClientOptions{
+		EnableLogs: true,
+	})
 	if err != nil {
 		panic(err)
 	}

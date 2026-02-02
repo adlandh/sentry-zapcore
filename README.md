@@ -46,10 +46,11 @@ import (
 
 func main() {
     // Initialize Sentry
-    err := sentry.Init(sentry.ClientOptions{
-        Dsn: "your-sentry-dsn",
-        Environment: "production",
-    })
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn:         "your-sentry-dsn",
+		Environment: "production",
+		EnableLogs:  true,
+	})
     if err != nil {
         panic(err)
     }
@@ -75,11 +76,12 @@ func main() {
 Before using this library, you need to initialize Sentry:
 
 ```go
-err := sentry.Init(sentry.ClientOptions{
-    Dsn: "your-sentry-dsn",
-    Environment: "production",
-    // Other Sentry options...
-})
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn:         "your-sentry-dsn",
+		Environment: "production",
+		EnableLogs:  true,
+		// Other Sentry options...
+	})
 if err != nil {
     // Handle error
 }

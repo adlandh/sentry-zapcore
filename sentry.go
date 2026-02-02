@@ -3,11 +3,13 @@ package sentryzapcore
 
 import (
 	"context"
-	"errors"
-	"strconv"
+	"fmt"
+	"math"
+	"runtime/debug"
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/getsentry/sentry-go/attribute"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -17,23 +19,32 @@ var _ zapcore.Core = (*SentryCore)(nil)
 // SentryCore is a zapcore.Core implementation that sends log entries to Sentry.
 // It can be used alongside other cores to send logs to multiple destinations.
 type SentryCore struct {
-	zapcore.LevelEnabler                        // Determines which log levels are enabled
-	fields               map[string]interface{} // Additional fields to include with each log entry
-	context              context.Context        // Context for Sentry operations, may contain a Sentry span
-	stackTrace           bool                   // Whether to include stack traces with error-level logs
+	zapcore.LevelEnabler // Determines which log levels are enabled
+	logger               sentry.Logger
+	attributes           []attribute.Builder
+	stackTrace           bool // Whether to include stack traces with error-level logs
 }
 
 // NewSentryCore creates a new SentryCore with the provided options.
 // By default, it only sends logs at Error level or above to Sentry.
-func NewSentryCore(options ...SentryCoreOptions) *SentryCore {
+func NewSentryCore(ctx context.Context, options ...SentryCoreOptions) *SentryCore {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	logger := sentry.NewLogger(ctx)
+
 	s := &SentryCore{
 		LevelEnabler: zapcore.ErrorLevel,
-		fields:       make(map[string]interface{}),
-		context:      context.Background(),
+		logger:       logger,
 	}
 
 	for _, opt := range options {
 		opt(s)
+	}
+
+	if len(s.attributes) > 0 {
+		s.logger.SetAttributes(s.attributes...)
 	}
 
 	return s
@@ -41,50 +52,27 @@ func NewSentryCore(options ...SentryCoreOptions) *SentryCore {
 
 // With adds structured context to the Core. It implements zapcore.Core interface.
 func (s *SentryCore) With(fields []zapcore.Field) zapcore.Core {
-	return s.addFields(fields)
-}
-
-// addFields creates a new SentryCore with the given fields added to the existing fields.
-// It also extracts any context.Context from the fields to use for Sentry operations.
-func (s *SentryCore) addFields(fields []zapcore.Field) *SentryCore {
-	// Start with the current context or a background context if none exists
-	currentContext := s.context
-	if currentContext == nil {
-		currentContext = context.Background()
+	ctxOld := s.logger.GetCtx()
+	if ctxOld == nil {
+		ctxOld = context.Background()
 	}
 
-	// Copy existing fields
-	m := make(map[string]interface{}, len(s.fields))
-	for k, v := range s.fields {
-		m[k] = v
+	attrs := append([]attribute.Builder(nil), s.attributes...)
+	ctx, values := encodeFields(fields)
+	if ctx != nil {
+		ctxOld = ctx
+	}
+	attrs = append(attrs, attributesFromValues(values)...)
+
+	logger := sentry.NewLogger(ctxOld)
+	if len(attrs) > 0 {
+		logger.SetAttributes(attrs...)
 	}
 
-	// Add fields to an in-memory encoder
-	enc := zapcore.NewMapObjectEncoder()
-
-	for _, f := range fields {
-		// Extract context if present
-		if v, ok := f.Interface.(context.Context); ok && v != nil {
-			currentContext = v
-			continue
-		}
-
-		// Add non-skip fields to the encoder
-		if f.Type != zapcore.SkipType {
-			f.AddTo(enc)
-		}
-	}
-
-	// Merge the encoded fields into our map
-	for k, v := range enc.Fields {
-		m[k] = v
-	}
-
-	// Create a new core with the updated fields and context
 	return &SentryCore{
 		LevelEnabler: s.LevelEnabler,
-		fields:       m,
-		context:      currentContext,
+		logger:       logger,
+		attributes:   attrs,
 		stackTrace:   s.stackTrace,
 	}
 }
@@ -104,57 +92,41 @@ func flushSentry() {
 	sentry.Flush(2 * time.Second)
 }
 
-// Write takes a log entry and sends it to Sentry asynchronously.
+// Write takes a log entry and sends it to Sentry.
 // It implements zapcore.Core interface.
 func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
-	// Create a clone with the additional fields
-	clone := s.addFields(fields)
+	logEntry := logEntryForLevel(s.logger, entry.Level)
 
-	go func(clone *SentryCore, entry zapcore.Entry) {
-		// Extract span from context if present
-		span := sentry.SpanFromContext(clone.context)
+	ctx, values := encodeFields(fields)
+	if ctx != nil {
+		logEntry = logEntry.WithCtx(ctx)
+	}
 
-		// Create a local hub to avoid modifying the global hub
-		localHub := sentry.CurrentHub().Clone()
+	for k, v := range values {
+		logEntry = applyValueToLogEntry(logEntry, k, v)
+	}
 
-		// Get the Sentry client
-		client := localHub.Client()
-		if client == nil {
-			// No client configured, nothing to do
-			return
+	if entry.LoggerName != "" {
+		logEntry = logEntry.String("logger", entry.LoggerName)
+	}
+
+	if entry.Caller.Defined {
+		logEntry = logEntry.String("caller.file", entry.Caller.File)
+		logEntry = logEntry.Int("caller.line", entry.Caller.Line)
+	}
+
+	if s.stackTrace && entry.Level >= zapcore.ErrorLevel {
+		stack := entry.Stack
+		if stack == "" {
+			stack = string(debug.Stack())
 		}
+		logEntry = logEntry.String("stacktrace", stack)
+	}
 
-		// Configure the scope with caller information and span
-		localHub.ConfigureScope(func(scope *sentry.Scope) {
-			scope.SetTag("file", entry.Caller.File)
-			scope.SetTag("line", strconv.Itoa(entry.Caller.Line))
-			scope.SetSpan(span)
-		})
+	logEntry.Emit(entry.Message)
 
-		// Create the Sentry event
-		event := &sentry.Event{
-			Extra:       clone.fields,
-			Fingerprint: []string{entry.Message},
-			Level:       sentrySeverity(entry.Level),
-			Message:     entry.Message,
-			Platform:    "go",
-			Timestamp:   entry.Time,
-			Logger:      entry.LoggerName,
-		}
+	go flushSentry()
 
-		// Add exception with stack trace for error-level logs if enabled
-		if entry.Level >= zapcore.ErrorLevel && s.stackTrace {
-			event.SetException(errors.New(entry.Message), client.Options().MaxErrorDepth)
-		}
-
-		// Send the event to Sentry
-		client.CaptureEvent(event, nil, localHub.Scope())
-
-		// Optionally flush, but do not block main goroutine
-		go flushSentry()
-	}(clone, entry)
-
-	// Since this is async, we can't return errors from Sentry
 	return nil
 }
 
@@ -165,26 +137,146 @@ func (*SentryCore) Sync() error {
 	return nil
 }
 
-// sentrySeverity converts a Zap log level to the corresponding Sentry level.
-// This ensures that log levels are properly mapped between the two systems.
-func sentrySeverity(lvl zapcore.Level) sentry.Level {
-	switch lvl {
+func logEntryForLevel(logger sentry.Logger, level zapcore.Level) sentry.LogEntry {
+	switch level {
 	case zapcore.DebugLevel:
-		return sentry.LevelDebug
+		return logger.Debug()
 	case zapcore.InfoLevel:
-		return sentry.LevelInfo
+		return logger.Info()
 	case zapcore.WarnLevel:
-		return sentry.LevelWarning
+		return logger.Warn()
 	case zapcore.ErrorLevel:
-		return sentry.LevelError
-	case zapcore.DPanicLevel:
-		return sentry.LevelFatal
-	case zapcore.PanicLevel:
-		return sentry.LevelFatal
-	case zapcore.FatalLevel:
-		return sentry.LevelFatal
+		return logger.Error()
+	case zapcore.DPanicLevel, zapcore.PanicLevel, zapcore.FatalLevel:
+		return logger.Error()
 	default:
-		// Unrecognized levels are treated as fatal to ensure they're noticed
-		return sentry.LevelFatal
+		return logger.Error()
+	}
+}
+
+func encodeFields(fields []zapcore.Field) (context.Context, map[string]interface{}) {
+	var ctx context.Context
+	enc := zapcore.NewMapObjectEncoder()
+
+	for _, f := range fields {
+		if f.Type == zapcore.SkipType {
+			if v, ok := f.Interface.(context.Context); ok && v != nil {
+				ctx = v
+			}
+			continue
+		}
+		f.AddTo(enc)
+	}
+
+	return ctx, enc.Fields
+}
+
+func attributesFromValues(values map[string]interface{}) []attribute.Builder {
+	attrs := make([]attribute.Builder, 0, len(values))
+	for k, v := range values {
+		attrs = append(attrs, attributeFromValue(k, v))
+	}
+	return attrs
+}
+
+func attributeFromValue(key string, value interface{}) attribute.Builder {
+	switch v := value.(type) {
+	case string:
+		return attribute.String(key, v)
+	case []byte:
+		return attribute.String(key, string(v))
+	case bool:
+		return attribute.Bool(key, v)
+	case int:
+		return attribute.Int(key, v)
+	case int8:
+		return attribute.Int(key, int(v))
+	case int16:
+		return attribute.Int(key, int(v))
+	case int32:
+		return attribute.Int(key, int(v))
+	case int64:
+		return attribute.Int64(key, v)
+	case uint:
+		if v > math.MaxInt64 {
+			return attribute.String(key, fmt.Sprint(v))
+		}
+		return attribute.Int64(key, int64(v))
+	case uint8:
+		return attribute.Int64(key, int64(v))
+	case uint16:
+		return attribute.Int64(key, int64(v))
+	case uint32:
+		return attribute.Int64(key, int64(v))
+	case uint64:
+		if v > math.MaxInt64 {
+			return attribute.String(key, fmt.Sprint(v))
+		}
+		return attribute.Int64(key, int64(v))
+	case float32:
+		return attribute.Float64(key, float64(v))
+	case float64:
+		return attribute.Float64(key, v)
+	case time.Time:
+		return attribute.String(key, v.Format(time.RFC3339Nano))
+	case time.Duration:
+		return attribute.String(key, v.String())
+	case error:
+		return attribute.String(key, v.Error())
+	case fmt.Stringer:
+		return attribute.String(key, v.String())
+	default:
+		return attribute.String(key, fmt.Sprint(v))
+	}
+}
+
+func applyValueToLogEntry(entry sentry.LogEntry, key string, value interface{}) sentry.LogEntry {
+	switch v := value.(type) {
+	case string:
+		return entry.String(key, v)
+	case []byte:
+		return entry.String(key, string(v))
+	case bool:
+		return entry.Bool(key, v)
+	case int:
+		return entry.Int(key, v)
+	case int8:
+		return entry.Int(key, int(v))
+	case int16:
+		return entry.Int(key, int(v))
+	case int32:
+		return entry.Int(key, int(v))
+	case int64:
+		return entry.Int64(key, v)
+	case uint:
+		if v > math.MaxInt64 {
+			return entry.String(key, fmt.Sprint(v))
+		}
+		return entry.Int64(key, int64(v))
+	case uint8:
+		return entry.Int64(key, int64(v))
+	case uint16:
+		return entry.Int64(key, int64(v))
+	case uint32:
+		return entry.Int64(key, int64(v))
+	case uint64:
+		if v > math.MaxInt64 {
+			return entry.String(key, fmt.Sprint(v))
+		}
+		return entry.Int64(key, int64(v))
+	case float32:
+		return entry.Float64(key, float64(v))
+	case float64:
+		return entry.Float64(key, v)
+	case time.Time:
+		return entry.String(key, v.Format(time.RFC3339Nano))
+	case time.Duration:
+		return entry.String(key, v.String())
+	case error:
+		return entry.String(key, v.Error())
+	case fmt.Stringer:
+		return entry.String(key, v.String())
+	default:
+		return entry.String(key, fmt.Sprint(v))
 	}
 }
