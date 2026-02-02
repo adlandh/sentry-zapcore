@@ -58,10 +58,12 @@ func (s *SentryCore) With(fields []zapcore.Field) zapcore.Core {
 	}
 
 	attrs := append([]attribute.Builder(nil), s.attributes...)
+
 	ctx, values := encodeFields(fields)
 	if ctx != nil {
 		ctxOld = ctx
 	}
+
 	attrs = append(attrs, attributesFromValues(values)...)
 
 	logger := sentry.NewLogger(ctxOld)
@@ -120,6 +122,7 @@ func (s *SentryCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 		if stack == "" {
 			stack = string(debug.Stack())
 		}
+
 		logEntry = logEntry.String("stacktrace", stack)
 	}
 
@@ -156,6 +159,7 @@ func logEntryForLevel(logger sentry.Logger, level zapcore.Level) sentry.LogEntry
 
 func encodeFields(fields []zapcore.Field) (context.Context, map[string]interface{}) {
 	var ctx context.Context
+
 	enc := zapcore.NewMapObjectEncoder()
 
 	for _, f := range fields {
@@ -163,8 +167,10 @@ func encodeFields(fields []zapcore.Field) (context.Context, map[string]interface
 			if v, ok := f.Interface.(context.Context); ok && v != nil {
 				ctx = v
 			}
+
 			continue
 		}
+
 		f.AddTo(enc)
 	}
 
@@ -173,110 +179,114 @@ func encodeFields(fields []zapcore.Field) (context.Context, map[string]interface
 
 func attributesFromValues(values map[string]interface{}) []attribute.Builder {
 	attrs := make([]attribute.Builder, 0, len(values))
+
 	for k, v := range values {
 		attrs = append(attrs, attributeFromValue(k, v))
 	}
+
 	return attrs
 }
 
 func attributeFromValue(key string, value interface{}) attribute.Builder {
-	switch v := value.(type) {
-	case string:
-		return attribute.String(key, v)
-	case []byte:
-		return attribute.String(key, string(v))
-	case bool:
-		return attribute.Bool(key, v)
-	case int:
-		return attribute.Int(key, v)
-	case int8:
-		return attribute.Int(key, int(v))
-	case int16:
-		return attribute.Int(key, int(v))
-	case int32:
-		return attribute.Int(key, int(v))
-	case int64:
-		return attribute.Int64(key, v)
-	case uint:
-		if v > math.MaxInt64 {
-			return attribute.String(key, fmt.Sprint(v))
-		}
-		return attribute.Int64(key, int64(v))
-	case uint8:
-		return attribute.Int64(key, int64(v))
-	case uint16:
-		return attribute.Int64(key, int64(v))
-	case uint32:
-		return attribute.Int64(key, int64(v))
-	case uint64:
-		if v > math.MaxInt64 {
-			return attribute.String(key, fmt.Sprint(v))
-		}
-		return attribute.Int64(key, int64(v))
-	case float32:
-		return attribute.Float64(key, float64(v))
-	case float64:
-		return attribute.Float64(key, v)
-	case time.Time:
-		return attribute.String(key, v.Format(time.RFC3339Nano))
-	case time.Duration:
-		return attribute.String(key, v.String())
-	case error:
-		return attribute.String(key, v.Error())
-	case fmt.Stringer:
-		return attribute.String(key, v.String())
-	default:
-		return attribute.String(key, fmt.Sprint(v))
-	}
+	sink := &attributeSink{key: key}
+	applyValue(value, sink)
+
+	return sink.result
 }
 
 func applyValueToLogEntry(entry sentry.LogEntry, key string, value interface{}) sentry.LogEntry {
+	sink := &logEntrySink{key: key, entry: entry}
+	applyValue(value, sink)
+
+	return sink.entry
+}
+
+type valueSink interface {
+	SetString(string)
+	SetBool(bool)
+	SetInt(int)
+	SetInt64(int64)
+	SetFloat64(float64)
+}
+
+type attributeSink struct {
+	key    string
+	result attribute.Builder
+}
+
+func (sink *attributeSink) SetString(value string) { sink.result = attribute.String(sink.key, value) }
+func (sink *attributeSink) SetBool(value bool)     { sink.result = attribute.Bool(sink.key, value) }
+func (sink *attributeSink) SetInt(value int)       { sink.result = attribute.Int(sink.key, value) }
+func (sink *attributeSink) SetInt64(value int64)   { sink.result = attribute.Int64(sink.key, value) }
+func (sink *attributeSink) SetFloat64(value float64) {
+	sink.result = attribute.Float64(sink.key, value)
+}
+
+type logEntrySink struct {
+	entry sentry.LogEntry
+	key   string
+}
+
+func (sink *logEntrySink) SetString(value string) { sink.entry = sink.entry.String(sink.key, value) }
+func (sink *logEntrySink) SetBool(value bool)     { sink.entry = sink.entry.Bool(sink.key, value) }
+func (sink *logEntrySink) SetInt(value int)       { sink.entry = sink.entry.Int(sink.key, value) }
+func (sink *logEntrySink) SetInt64(value int64)   { sink.entry = sink.entry.Int64(sink.key, value) }
+func (sink *logEntrySink) SetFloat64(value float64) {
+	sink.entry = sink.entry.Float64(sink.key, value)
+}
+
+//nolint:cyclop,funlen // Type-switch is the clearest way to map values into sink methods.
+func applyValue(value interface{}, sink valueSink) {
 	switch v := value.(type) {
 	case string:
-		return entry.String(key, v)
+		sink.SetString(v)
 	case []byte:
-		return entry.String(key, string(v))
+		sink.SetString(string(v))
 	case bool:
-		return entry.Bool(key, v)
+		sink.SetBool(v)
 	case int:
-		return entry.Int(key, v)
+		sink.SetInt(v)
 	case int8:
-		return entry.Int(key, int(v))
+		sink.SetInt(int(v))
 	case int16:
-		return entry.Int(key, int(v))
+		sink.SetInt(int(v))
 	case int32:
-		return entry.Int(key, int(v))
+		sink.SetInt(int(v))
 	case int64:
-		return entry.Int64(key, v)
+		sink.SetInt64(v)
 	case uint:
 		if v > math.MaxInt64 {
-			return entry.String(key, fmt.Sprint(v))
+			sink.SetString(fmt.Sprint(v))
+			return
 		}
-		return entry.Int64(key, int64(v))
+
+		sink.SetInt64(int64(v))
 	case uint8:
-		return entry.Int64(key, int64(v))
+		sink.SetInt64(int64(v))
 	case uint16:
-		return entry.Int64(key, int64(v))
+		sink.SetInt64(int64(v))
 	case uint32:
-		return entry.Int64(key, int64(v))
+		sink.SetInt64(int64(v))
 	case uint64:
 		if v > math.MaxInt64 {
-			return entry.String(key, fmt.Sprint(v))
+			sink.SetString(fmt.Sprint(v))
+			return
 		}
-		return entry.Int64(key, int64(v))
+
+		sink.SetInt64(int64(v))
 	case float32:
-		return entry.Float64(key, float64(v))
+		sink.SetFloat64(float64(v))
 	case float64:
-		return entry.Float64(key, v)
+		sink.SetFloat64(v)
 	case time.Time:
-		return entry.String(key, v.Format(time.RFC3339Nano))
+		sink.SetString(v.Format(time.RFC3339Nano))
 	case time.Duration:
-		return entry.String(key, v.String())
+		sink.SetString(v.String())
 	case error:
-		return entry.String(key, v.Error())
+		sink.SetString(v.Error())
 	case fmt.Stringer:
-		return entry.String(key, v.String())
+		sink.SetString(v.String())
 	default:
-		return entry.String(key, fmt.Sprint(v))
+		sink.SetString(fmt.Sprint(v))
 	}
 }
