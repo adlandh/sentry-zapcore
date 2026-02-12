@@ -1,7 +1,7 @@
 # Sentry Zap Core
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/adlandh/sentry-zapcore.svg)](https://pkg.go.dev/github.com/adlandh/sentry-zapcore)
-[![Go Report Card](https://goreportcard.com/badge/github.com/adlandh/sentry-zapcore)](https://goreportcard.com/report/github.com/adlandh/sentry-zapcore)
+[![Go Reference](https://pkg.go.dev/badge/github.com/adlandh/sentry-zapcore/v2.svg)](https://pkg.go.dev/github.com/adlandh/sentry-zapcore/v2)
+[![Go Report Card](https://goreportcard.com/badge/github.com/adlandh/sentry-zapcore/v2)](https://goreportcard.com/report/github.com/adlandh/sentry-zapcore/v2)
 
 A Go library that integrates [Zap](https://pkg.go.dev/go.uber.org/zap) structured logging with [Sentry](https://sentry.io) error tracking. This integration allows you to:
 
