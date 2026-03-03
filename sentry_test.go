@@ -107,11 +107,11 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		logEntry, found := findLog(s.transport.Events(), message)
 		s.Require().True(found)
 		s.Require().Equal(message, logEntry.Body)
-		s.Require().Equal(fakeId, logEntry.Attributes["id"].Value)
-		s.Require().Equal("test", logEntry.Attributes["func"].Value)
-		s.Require().Equal("error", logEntry.Attributes["error"].Value)
+		s.Require().Equal(fakeId, logEntry.Attributes["id"].String())
+		s.Require().Equal("test", logEntry.Attributes["func"].String())
+		s.Require().Equal("error", logEntry.Attributes["error"].String())
 		s.Require().Equal(sentry.LogLevelError, logEntry.Level)
-		s.Require().Equal("test", logEntry.Attributes["sentry.environment"].Value)
+		s.Require().Equal("test", logEntry.Attributes["sentry.environment"].String())
 	})
 	s.Run("with stacktrace", func() {
 		err := sentry.Init(sentry.ClientOptions{
@@ -129,7 +129,7 @@ func (s *sentryZapCoreTest) TestWithErrorLog() {
 		sentry.Flush(2 * time.Second)
 		logEntry, found := findLog(s.transport.Events(), message)
 		s.Require().True(found)
-		s.Require().NotEmpty(logEntry.Attributes["stacktrace"].Value)
+		s.Require().NotEmpty(logEntry.Attributes["stacktrace"])
 	})
 }
 
@@ -192,13 +192,13 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 	sentry.Flush(2 * time.Second)
 	logEntry, found := findLog(s.transport.Events(), message)
 	s.Require().True(found)
-	s.Require().Equal(fakeId, logEntry.Attributes["id"].Value)
-	s.Require().Equal("test", logEntry.Attributes["func"].Value)
-	s.Require().Equal("error", logEntry.Attributes["error"].Value)
+	s.Require().Equal(fakeId, logEntry.Attributes["id"].String())
+	s.Require().Equal("test", logEntry.Attributes["func"].String())
+	s.Require().Equal("error", logEntry.Attributes["error"].String())
 	_, hasCtx := logEntry.Attributes["ctx"]
 	s.Require().False(hasCtx)
 	s.Require().Equal(sentry.LogLevelError, logEntry.Level)
-	s.Require().Equal("test", logEntry.Attributes["sentry.environment"].Value)
+	s.Require().Equal("test", logEntry.Attributes["sentry.environment"].String())
 	s.Require().Equal(span.TraceID, logEntry.TraceID)
 	s.Require().Equal(span.SpanID, logEntry.SpanID)
 }
