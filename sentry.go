@@ -210,8 +210,8 @@ type valueSink interface {
 }
 
 type attributeSink struct {
-	key    string
 	result attribute.Builder
+	key    string
 }
 
 func (sink *attributeSink) SetString(value string) { sink.result = attribute.String(sink.key, value) }
