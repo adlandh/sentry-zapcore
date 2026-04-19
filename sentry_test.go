@@ -3,6 +3,7 @@ package sentryzapcore
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -203,6 +204,204 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 	s.Require().Equal(span.SpanID, logEntry.SpanID)
 }
 
+func (s *sentryZapCoreTest) TestNewSentryCoreNilCtx() {
+	// Intentionally pass a nil context to exercise the default branch in NewSentryCore.
+	// Using a variable avoids SA1012 from linters that flag literal nil contexts.
+	var nilCtx context.Context
+	core := NewSentryCore(nilCtx)
+	s.Require().NotNil(core)
+}
+
+func (s *sentryZapCoreTest) TestSync() {
+	err := sentry.Init(sentry.ClientOptions{
+		Transport:   s.transport,
+		Environment: "test",
+		EnableLogs:  true,
+	})
+	s.Require().NoError(err)
+
+	logger := WithSentry(zaptest.NewLogger(s.T()))
+	s.Require().NoError(logger.Sync())
+}
+
+func (s *sentryZapCoreTest) TestDebugAndWarnLevels() {
+	err := sentry.Init(sentry.ClientOptions{
+		Transport:   s.transport,
+		Environment: "test",
+		EnableLogs:  true,
+	})
+	s.Require().NoError(err)
+
+	logger := WithSentry(zaptest.NewLogger(s.T()), WithMinLevel(zapcore.DebugLevel))
+
+	debugMsg := gofakeit.Sentence()
+	logger.Debug(debugMsg)
+
+	warnMsg := gofakeit.Sentence()
+	logger.Warn(warnMsg)
+
+	sentry.Flush(2 * time.Second)
+
+	debugLog, found := findLog(s.transport.Events(), debugMsg)
+	s.Require().True(found)
+	s.Require().Equal(sentry.LogLevelDebug, debugLog.Level)
+
+	warnLog, found := findLog(s.transport.Events(), warnMsg)
+	s.Require().True(found)
+	s.Require().Equal(sentry.LogLevelWarn, warnLog.Level)
+}
+
+func (s *sentryZapCoreTest) TestWriteWithLoggerNameAndCaller() {
+	err := sentry.Init(sentry.ClientOptions{
+		Transport:   s.transport,
+		Environment: "test",
+		EnableLogs:  true,
+	})
+	s.Require().NoError(err)
+
+	logger := WithSentry(zaptest.NewLogger(s.T(), zaptest.WrapOptions(zap.AddCaller()))).Named("mylogger")
+	message := gofakeit.Sentence()
+	logger.Error(message)
+	sentry.Flush(2 * time.Second)
+
+	logEntry, found := findLog(s.transport.Events(), message)
+	s.Require().True(found)
+	s.Require().Equal("mylogger", logEntry.Attributes["logger"].String())
+	s.Require().NotEmpty(logEntry.Attributes["caller.file"].String())
+	s.Require().Greater(logEntry.Attributes["caller.line"].AsInt64(), int64(0))
+}
+
+func (s *sentryZapCoreTest) TestWithFields() {
+	err := sentry.Init(sentry.ClientOptions{
+		Transport:   s.transport,
+		Environment: "test",
+		EnableLogs:  true,
+	})
+	s.Require().NoError(err)
+
+	s.Run("with ctx field", func() {
+		opName := gofakeit.Word()
+		rootSpan := sentry.StartSpan(context.Background(), opName+"_root")
+		defer rootSpan.Finish()
+
+		ctxField := zap.Field{
+			Key:       "ctx",
+			Type:      zapcore.SkipType,
+			Interface: rootSpan.Context(),
+		}
+
+		base := WithSentry(zaptest.NewLogger(s.T()))
+		child := base.With(zap.String("component", "auth"), zap.Int("retry", 3), ctxField)
+
+		message := gofakeit.Sentence()
+		child.Error(message)
+		sentry.Flush(2 * time.Second)
+
+		logEntry, found := findLog(s.transport.Events(), message)
+		s.Require().True(found)
+		s.Require().Equal("auth", logEntry.Attributes["component"].String())
+		s.Require().Equal(int64(3), logEntry.Attributes["retry"].AsInt64())
+	})
+
+	s.Run("without ctx field", func() {
+		base := WithSentry(zaptest.NewLogger(s.T()))
+		child := base.With(zap.String("service", "api"))
+
+		message := gofakeit.Sentence()
+		child.Error(message)
+		sentry.Flush(2 * time.Second)
+
+		logEntry, found := findLog(s.transport.Events(), message)
+		s.Require().True(found)
+		s.Require().Equal("api", logEntry.Attributes["service"].String())
+	})
+}
+
+// stringerType exercises the fmt.Stringer branch of stringValue.
+type stringerType struct{ s string }
+
+func (st stringerType) String() string { return st.s }
+
+func (s *sentryZapCoreTest) TestAllFieldTypes() {
+	err := sentry.Init(sentry.ClientOptions{
+		Transport:   s.transport,
+		Environment: "test",
+		EnableLogs:  true,
+	})
+	s.Require().NoError(err)
+
+	logger := WithSentry(zaptest.NewLogger(s.T()), WithMinLevel(zapcore.InfoLevel))
+
+	now := time.Now().UTC().Truncate(time.Second)
+	dur := 5 * time.Second
+
+	message := gofakeit.Sentence()
+	logger.Info(message,
+		zap.Bool("b", true),
+		zap.Int("i", -1),
+		zap.Int8("i8", -8),
+		zap.Int16("i16", -16),
+		zap.Int32("i32", -32),
+		zap.Int64("i64", -64),
+		zap.Uint("u", 1),
+		zap.Uint8("u8", 8),
+		zap.Uint16("u16", 16),
+		zap.Uint32("u32", 32),
+		zap.Uint64("u64", 64),
+		zap.Uint64("u64_overflow", math.MaxUint64),
+		zap.Float32("f32", 1.5),
+		zap.Float64("f64", 2.5),
+		zap.Duration("dur", dur),
+		zap.Time("t", now),
+		zap.Binary("bin", []byte("hello")),
+		zap.Stringer("stg", stringerType{s: "stringer-value"}),
+		zap.Any("struct", struct{ A int }{A: 7}),
+	)
+	sentry.Flush(2 * time.Second)
+
+	logEntry, found := findLog(s.transport.Events(), message)
+	s.Require().True(found)
+
+	s.Require().True(logEntry.Attributes["b"].AsBool())
+	s.Require().Equal(int64(-1), logEntry.Attributes["i"].AsInt64())
+	s.Require().Equal(int64(-8), logEntry.Attributes["i8"].AsInt64())
+	s.Require().Equal(int64(-16), logEntry.Attributes["i16"].AsInt64())
+	s.Require().Equal(int64(-32), logEntry.Attributes["i32"].AsInt64())
+	s.Require().Equal(int64(-64), logEntry.Attributes["i64"].AsInt64())
+	s.Require().Equal(int64(1), logEntry.Attributes["u"].AsInt64())
+	s.Require().Equal(int64(8), logEntry.Attributes["u8"].AsInt64())
+	s.Require().Equal(int64(16), logEntry.Attributes["u16"].AsInt64())
+	s.Require().Equal(int64(32), logEntry.Attributes["u32"].AsInt64())
+	s.Require().Equal(int64(64), logEntry.Attributes["u64"].AsInt64())
+	// math.MaxUint64 overflows int64 → string fallback.
+	s.Require().Equal("18446744073709551615", logEntry.Attributes["u64_overflow"].String())
+	s.Require().InDelta(1.5, logEntry.Attributes["f32"].AsFloat64(), 0.0001)
+	s.Require().InDelta(2.5, logEntry.Attributes["f64"].AsFloat64(), 0.0001)
+	s.Require().Equal(dur.String(), logEntry.Attributes["dur"].String())
+	s.Require().Equal(now.Format(time.RFC3339Nano), logEntry.Attributes["t"].String())
+	s.Require().Equal("hello", logEntry.Attributes["bin"].String())
+	s.Require().Equal("stringer-value", logEntry.Attributes["stg"].String())
+	s.Require().NotEmpty(logEntry.Attributes["struct"].String())
+}
+
 func TestSentryZapCore(t *testing.T) {
 	suite.Run(t, new(sentryZapCoreTest))
+}
+
+// TestConversionHelpers directly exercises the type-conversion helpers to
+// cover `default` branches that zap's encoder normalizes away before
+// applyValue sees them.
+func TestConversionHelpers(t *testing.T) {
+	// stringValue: non-matching type -> ("", false)
+	if s, ok := stringValue(123); ok || s != "" {
+		t.Errorf("stringValue(int) = (%q, %v), want (\"\", false)", s, ok)
+	}
+	// signedInt64Value: non-matching type -> (0, false)
+	if n, ok := signedInt64Value("not-an-int"); ok || n != 0 {
+		t.Errorf("signedInt64Value(string) = (%d, %v), want (0, false)", n, ok)
+	}
+	// unsignedInt64Value: non-matching type -> (0, false)
+	if n, ok := unsignedInt64Value("not-a-uint"); ok || n != 0 {
+		t.Errorf("unsignedInt64Value(string) = (%d, %v), want (0, false)", n, ok)
+	}
 }
