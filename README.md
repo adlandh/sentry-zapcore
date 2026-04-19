@@ -21,14 +21,14 @@ A Go library that integrates [Zap](https://pkg.go.dev/go.uber.org/zap) structure
 
 ## Requirements
 
-- Go 1.23 or higher
-- [go.uber.org/zap](https://pkg.go.dev/go.uber.org/zap) v1.27.0 or higher
-- [github.com/getsentry/sentry-go](https://pkg.go.dev/github.com/getsentry/sentry-go) v0.32.0 or higher
+- Go 1.25 or higher
+- [go.uber.org/zap](https://pkg.go.dev/go.uber.org/zap) v1.27.1 or higher
+- [github.com/getsentry/sentry-go](https://pkg.go.dev/github.com/getsentry/sentry-go) v0.45.0 or higher
 
 ## Installation
 
 ```bash
-go get github.com/adlandh/sentry-zapcore
+go get github.com/adlandh/sentry-zapcore/v2
 ```
 
 ## Quick Start
@@ -39,13 +39,13 @@ package main
 import (
     "errors"
 
-    sentryzapcore "github.com/adlandh/sentry-zapcore"
+    sentryzapcore "github.com/adlandh/sentry-zapcore/v2"
     "github.com/getsentry/sentry-go"
     "go.uber.org/zap"
 )
 
 func main() {
-    // Initialize Sentry
+	// Initialize Sentry.
 	err := sentry.Init(sentry.ClientOptions{
 		Dsn:         "your-sentry-dsn",
 		Environment: "production",
@@ -55,17 +55,18 @@ func main() {
         panic(err)
     }
 
-    // Create a Zap logger with Sentry integration
-    logger, err := zap.NewProduction(sentryzapcore.WithSentryOption())
-    if err != nil {
-        panic(err)
-    }
+	// Create a Zap logger with Sentry integration.
+	logger, err := zap.NewProduction(sentryzapcore.WithSentryOption())
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = logger.Sync() }()
 
-    // Log an error that will be sent to Sentry
-    logger.Error("Something went wrong",
-        zap.String("user_id", "123"),
-        zap.Error(errors.New("operation failed")),
-    )
+	// Log an error that will be sent to Sentry.
+	logger.Error("Something went wrong",
+		zap.String("user_id", "123"),
+		zap.Error(errors.New("operation failed")),
+	)
 }
 ```
 
@@ -76,12 +77,12 @@ func main() {
 Before using this library, you need to initialize Sentry:
 
 ```go
-	err := sentry.Init(sentry.ClientOptions{
-		Dsn:         "your-sentry-dsn",
-		Environment: "production",
-		EnableLogs:  true,
-		// Other Sentry options...
-	})
+err := sentry.Init(sentry.ClientOptions{
+	Dsn:         "your-sentry-dsn",
+	Environment: "production",
+	EnableLogs:  true,
+	// Other Sentry options...
+})
 if err != nil {
     // Handle error
 }
@@ -99,12 +100,14 @@ logger, err := zap.NewProduction(sentryzapcore.WithSentryOption())
 if err != nil {
     // Handle error
 }
+defer func() { _ = logger.Sync() }()
 
 // Or with a development logger
 logger, err := zap.NewDevelopment(sentryzapcore.WithSentryOption())
 if err != nil {
     // Handle error
 }
+defer func() { _ = logger.Sync() }()
 ```
 
 #### 2. Adding to an existing logger:
@@ -112,6 +115,7 @@ if err != nil {
 ```go
 // Add Sentry to an existing logger
 logger = sentryzapcore.WithSentry(logger)
+defer func() { _ = logger.Sync() }()
 ```
 
 ### Configuration Options
@@ -131,6 +135,8 @@ logger = sentryzapcore.WithSentry(logger,
     sentryzapcore.WithStackTrace(),
 )
 ```
+
+Call `logger.Sync()` before process exit to flush buffered Sentry events. The examples above use `defer` for that.
 
 ### Structured Logging
 
