@@ -205,7 +205,10 @@ func (s *sentryZapCoreTest) TestWithSpanContext() {
 }
 
 func (s *sentryZapCoreTest) TestNewSentryCoreNilCtx() {
-	core := NewSentryCore(nil) //nolint:staticcheck // intentional nil ctx to exercise default branch
+	// Intentionally pass a nil context to exercise the default branch in NewSentryCore.
+	// Using a variable avoids SA1012 from linters that flag literal nil contexts.
+	var nilCtx context.Context
+	core := NewSentryCore(nilCtx)
 	s.Require().NotNil(core)
 }
 
