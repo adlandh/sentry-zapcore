@@ -3,7 +3,7 @@ module github.com/adlandh/sentry-zapcore/v2
 go 1.25.0
 
 require (
-	github.com/brianvoe/gofakeit/v7 v7.14.1
+	github.com/brianvoe/gofakeit/v7 v7.15.0
 	github.com/getsentry/sentry-go v0.46.2
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.28.0
