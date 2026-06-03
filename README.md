@@ -1,5 +1,8 @@
 # Sentry Zap Core
 
+> [!WARNING]
+> **This project is no longer maintained.** Please use the official Sentry Zap integration instead: [`github.com/getsentry/sentry-go/zap`](https://pkg.go.dev/github.com/getsentry/sentry-go/zap).
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/adlandh/sentry-zapcore/v2.svg)](https://pkg.go.dev/github.com/adlandh/sentry-zapcore/v2)
 [![Go Report Card](https://goreportcard.com/badge/github.com/adlandh/sentry-zapcore/v2)](https://goreportcard.com/report/github.com/adlandh/sentry-zapcore/v2)
 
