@@ -1,1 +1,5 @@
 .golangci.yml
+.codex/
+.opencode/
+.claude/
+openspec/changes/archive
